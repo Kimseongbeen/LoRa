@@ -15,7 +15,7 @@ your key
 // Amazon Root CA 1
 static const char AWS_CERT_CA[] PROGMEM = R"EOF(
 -----BEGIN CERTIFICATE-----
-your key  
+your key
 -----END CERTIFICATE-----
 )EOF";
 
