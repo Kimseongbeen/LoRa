@@ -9,6 +9,7 @@ lora 에서 추가되는 프로토콜
   macFrom:말단방향 lora 로부터 전송받은 lora mac 주소
   macTo: 서버방향르로 전송할 lora mac 주소
 */
+// 최종수정2023-06-15
 #include <Wire.h>  
 #include "LoRaWan_APP.h"
 #include "Arduino.h"

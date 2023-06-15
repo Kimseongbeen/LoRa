@@ -1,3 +1,4 @@
+// 최종수정2023-06-15
 void setup_function(){
   pinMode(TRIGGER_PIN, INPUT_PULLUP);
   Serial.begin(9600);

@@ -1,4 +1,4 @@
-
+// 최종수정2023-06-15
 void readConfig() {
   if (!SPIFFS.begin(true)) {
     Serial.println("formatting........");

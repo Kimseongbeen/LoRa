@@ -1,3 +1,4 @@
+// 최종수정2023-06-15
 #include <Wire.h>  
 #include "LoRaWan_APP.h"
 #include "Arduino.h"

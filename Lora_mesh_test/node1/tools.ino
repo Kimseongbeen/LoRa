@@ -1,3 +1,4 @@
+// 최종수정2023-06-15
 void VextON(void)
 {
   pinMode(Vext,OUTPUT);
