@@ -52,7 +52,7 @@ SSD1306Wire  displayOled(0x3c, 500000, SDA_OLED, SCL_OLED, GEOMETRY_128_64, RST_
 #define TRIGGER_PIN 37 // trigger pin GPIO37
 
 // AWS
-const char AWS_IOT_ENDPOINT[] = "a35y3l4o97ieag-ats.iot.us-east-1.amazonaws.com";
+const char AWS_IOT_ENDPOINT[] = "your end point"; // ex) xxxxxxxxx.iot.ap-northeast-2.amazonaws.com
 WiFiClientSecure net = WiFiClientSecure();
 MQTTClient client = MQTTClient(256);
 //MQTTClient client = MQTTClient(30000);
