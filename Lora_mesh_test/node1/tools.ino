@@ -1,3 +1,36 @@
+void VextON(void)
+{
+  pinMode(Vext,OUTPUT);
+  digitalWrite(Vext, LOW);
+  
+}
+
+void VextOFF(void) //Vext default OFF
+{
+  pinMode(Vext,OUTPUT);
+  digitalWrite(Vext, HIGH);
+}
+
+// 메세지 전달할 mac rssi 현재 lora의 layer 저장
+void changeLoraTo(String macFrom,int rssiFrom, int layerNew) {
+  //if(macFrom.length() !=12) return;
+  loraT.mac="";
+  loraT.mac+=loraF.mac;
+  loraT.rssi=loraF.rssi;
+  loraC.layer=loraF.layer+1;
+  saveConfig();  
+}
+
+void OnTxDone( void )
+{
+  state=STATE_RX;
+}
+
+void OnTxTimeout( void )
+{
+    Radio.Sleep( );
+    state=STATE_TX;
+}
 
 void readConfig() {
   SPIFFS.begin();
@@ -20,10 +53,6 @@ void readConfig() {
 
 void saveConfig() {
   SPIFFS.begin();
-  // Next lines have to be done ONLY ONCE!!!!!When SPIFFS is formatted ONCE you can comment these lines out!!
-  //Serial.println("Please wait 30 secs for SPIFFS to be formatted");
-  //SPIFFS.format();
-
   // open file for writing
   File f = SPIFFS.open("/config.txt", "w");
   if (!f) {
@@ -35,9 +64,9 @@ void saveConfig() {
   f.close();
   SPIFFS.end();
   Serial.println("Save SPIFFS");
-  //delay(1000);
-  //ESP.restart();
-  //delay(1000);
+  delay(1000);
+  ESP.restart();
+  delay(1000);
 }
 
 

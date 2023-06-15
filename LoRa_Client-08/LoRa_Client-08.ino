@@ -90,7 +90,7 @@ void onReceive(int packetSize) {
       msgTo+=packet;
       msgType=1;
       Serial.println("Bridge(-전달) "+msgTo);
-      sendLora();
+      sendLora(); //msgTo 전송, 보내는 부분에 넣어야 할까?
       msgType=0;
     }
   }
@@ -103,6 +103,7 @@ void onReceive(int packetSize) {
     }
     // 메세지 전달 자기와 링크된 로라의 msg만 전달한다.
     if(loraF.mac==loraT.mac && macIn!=loraC.mac){
+      //
       packet.replace("\"layer\":"+String(layerIn),"\"layer\":"+String(loraC.layer));
       packet.replace("\"macFrom\":\""+loraF.mac,"\"macFrom\":\""+loraC.mac);
       msgTo="";

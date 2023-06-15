@@ -36,7 +36,6 @@ void saveConfig() {
   Serial.println("Save SPIFFS");
   delay(random(0,4000));
   ESP.restart();
-  delay(1000);
 }
 
 // trigger pin 0(D3) 2(D4)

@@ -7,55 +7,39 @@
 #include "heltec.h"
 #include "HT_SSD1306Wire.h"
 
-
 SSD1306Wire  displayOled(0x3c, 500000, SDA_OLED, SCL_OLED, GEOMETRY_128_64, RST_OLED); // addr , freq , i2c group , resolution , rst
-
 #define TRIGGER_PIN 37 // trigger pin 13
+#define RF_FREQUENCY                                923000000 // Hz 라디오가 작동하는 주파수(Hertz 단위)입니다 923MHz
 
-#define RF_FREQUENCY                                923000000 // Hz
+#define TX_OUTPUT_POWER                             5        // dBm 값이 높을수록 범위가 증가하지만 전력 소비도 증가합니다.
 
-#define TX_OUTPUT_POWER                             5        // dBm
-
-#define LORA_BANDWIDTH                              0         // [0: 125 kHz,
+#define LORA_BANDWIDTH                              0         // [0: 125 kHz,LoRa 신호의 대역폭, 대역폭이 높을수록 데이터 속도는 빨라지지만 범위는 줄어듭니다.
                                                               //  1: 250 kHz,
                                                               //  2: 500 kHz,
                                                               //  3: Reserved]
-#define LORA_SPREADING_FACTOR                       7         // [SF7..SF12]
-#define LORA_CODINGRATE                             1         // [1: 4/5,
-                                                              //  2: 4/6,
-                                                              //  3: 4/7,
+#define LORA_SPREADING_FACTOR                       7         // [SF7..SF12] 확산 계수가 높을수록 범위는 증가하지만 데이터 속도는 감소합니다.
+#define LORA_CODINGRATE                             2         // [1: 4/5, LoRa 신호의 부호화율
+                                                              //  2: 4/6, 코딩 속도가 높을수록 데이터 중복성이 증가하여 간섭에 대한 저항성이 향상
+                                                              //  3: 4/7, 되지만 데이터 속도는 감소합니다.
                                                               //  4: 4/8]
-#define LORA_PREAMBLE_LENGTH                        8         // Same for Tx and Rx
-#define LORA_SYMBOL_TIMEOUT                         0         // Symbols
-#define LORA_FIX_LENGTH_PAYLOAD_ON                  false
+#define LORA_PREAMBLE_LENGTH                        8         // Same for Tx and Rx LoRa 패킷의 프리앰블 길이 프리앰블은 수신기가 송신기와 동기화할 수 있도록 각 패킷의 시작 부분에서 전송되는 일련의 기호
+#define LORA_SYMBOL_TIMEOUT                         0         // Symbols 수신기가 송신기에서 기호를 기다리는 최대 시간입니다.
+#define LORA_FIX_LENGTH_PAYLOAD_ON                  false     //true일경우 payload 고정
 #define LORA_IQ_INVERSION_ON                        false
 
 
 #define RX_TIMEOUT_VALUE                            1000
 #define BUFFER_SIZE                                 200 // Define the payload size here
 
-char txpacket[BUFFER_SIZE];
-char rxpacket[BUFFER_SIZE];
-char lastRxPacket[BUFFER_SIZE];
-static RadioEvents_t RadioEvents;
-void OnTxDone( void );
-void OnTxTimeout( void );
-void OnRxDone( uint8_t *payload, uint16_t size, int16_t rssi, int8_t snr );
-void display(int no);
-void tick();
-//void changeLoraTo();
-void changeLoraTo(String macFrom,int rssiFrom, int layerNew);
-void crd16Rtu();
-void serialEvent();
-void tickMeasure();
+#define board_ID 1
+
 typedef enum
 {
     LOWPOWER,
     STATE_RX,
     STATE_TX
 }States_t;
-
-int16_t txNumber=0;
+  
 States_t state;
 bool sleepMode = false;
 int16_t Rssi,rxSize;
@@ -66,128 +50,94 @@ class Lora {
     int dire=0;
     int rssi=-200; //-80 보다 크면 아주 양호 -80~-90 양호  -90~-100 불량  -100보다 작음 나쁨
     int layer=100;
+    int ID;
+    int index;
 };
 Lora loraC; // lora Client
 Lora loraF; // lora onReceive 함수에서 From 임시로 전달받은 로라, 통시방향 관계없이 전달된 값
 Lora loraT; // lora To 나에게 링크되어 메세지 서버쪽으로 전달할 로라
-
+class Lora IDdata[200];
+byte received_ID[200] = { 0, };
+byte tickmeasureS = 0;
 //String packet;
 int packSize = 0;
 String msgTo;
 int msgType=0; //0=measure 1=전달(packet 을 lora로 보냄)
 int checkCount=0;
-String TestName = "node1";
-unsigned int counter = 0;
+
 unsigned long previousMillis = 0;     
 unsigned long interval = random(100, 200) * 100;  // 출력 간격(10~20분)
-String inputString = "";         // 받은 문자열
+
 char mac[20];  //mac address
 //json을 위한 설정
 StaticJsonDocument<200> doc;
 DeserializationError error;
 JsonObject root;
+char txpacket[BUFFER_SIZE];
+char rxpacket[BUFFER_SIZE];
+char lastRxPacket[BUFFER_SIZE];
+static RadioEvents_t RadioEvents;
+void OnTxDone( void );
+void OnTxTimeout( void );
+void OnRxDone( uint8_t *payload, uint16_t size, int16_t rssi, int8_t snr );
+void display(int no);
+void tick();
+void changeLoraTo(String macFrom,int rssiFrom, int layerNew);
+void crd16Rtu();
+void serialEvent();
+void tickMeasure();
 
 void setup() {
-  Serial.begin(9600);
-  Serial.println("mac address");
-  
-    uint64_t chipid;
-    chipid=ESP.getEfuseMac();//The chip ID is essentially its MAC address(length: 6 bytes).
-    loraC.mac=String(((uint16_t)(chipid>>32)),HEX)+String(((uint32_t)chipid),HEX);  
-    Serial.println(loraC.mac);
-
-    Mcu.begin();
-    Rssi=0;
-
-    RadioEvents.TxDone = OnTxDone;
-    RadioEvents.TxTimeout = OnTxTimeout;
-    RadioEvents.RxDone = OnRxDone;
-
-    Radio.Init( &RadioEvents );
-    Radio.SetChannel( RF_FREQUENCY );
-    Radio.SetTxConfig( MODEM_LORA, TX_OUTPUT_POWER, 0, LORA_BANDWIDTH,
-                                   LORA_SPREADING_FACTOR, LORA_CODINGRATE,
-                                   LORA_PREAMBLE_LENGTH, LORA_FIX_LENGTH_PAYLOAD_ON,
-                                   true, 0, 0, LORA_IQ_INVERSION_ON, 3000 );
-
-    Radio.SetRxConfig( MODEM_LORA, LORA_BANDWIDTH, LORA_SPREADING_FACTOR,
-                                   LORA_CODINGRATE, 0, LORA_PREAMBLE_LENGTH,
-                                   LORA_SYMBOL_TIMEOUT, LORA_FIX_LENGTH_PAYLOAD_ON,
-                                   0, true, 0, 0, LORA_IQ_INVERSION_ON, true );
-    state=STATE_RX;
-
-    displayOled.init();
-    displayOled.setFont(ArialMT_Plain_10);
-    displayOled.setTextAlignment(TEXT_ALIGN_LEFT);
-    displayAct(0);
-
-    readConfig();
+setup_function();
 }
 
 void loop() {
   tick();
   switch(state){
     case STATE_TX:
-
-    Serial.println("");
-    Serial.println("to "+loraT.mac);
-    Serial.println("from "+loraF.mac);
-    Serial.println("send "+msgTo);
-    Serial.println("");    
+    if(loraT.mac.length()<6) return;
     displayAct(10);
       msgTo.toCharArray(txpacket,msgTo.length());
       Radio.Send( (uint8_t *)txpacket, strlen(txpacket) );
       msgType=0; 
+      VextON();
       state=LOWPOWER;
       break;
     case STATE_RX:
-      Serial.println("수신모드ON");
       Radio.Rx( 0 );
       state=LOWPOWER;
       break;
     case LOWPOWER:
       Radio.IrqProcess( );
+      VextOFF();
       break;
     default:
       break;
   }
+  //공장리셋
+  if ( digitalRead(TRIGGER_PIN) == LOW ) 
+    factoryDefault();
 }
+
 
 void tick() {
   unsigned long currentMillis = millis();
   if (currentMillis - previousMillis >= interval) {
     previousMillis = currentMillis;
-    interval = random(100, 200) * 100;
-    if(msgType==0) {
-      tickMeasure();  
-      state=STATE_TX;
+    interval = random(300, 800) * 100;
+    if(loraT.mac.length()>6) { //데이터 저장될때 
+    tickMeasure(); // 내 기기의 데이터 전송,
+      byte num_of_received_sensor = 0;  
+      for (int i = 0; i < 200; i++) {   //수신한 센서 갯수 계산
+          if (received_ID[i] == 0) break; //수신한 센서 중 최신화된 값들 전송,
+          num_of_received_sensor++;
+      }
+      Serial.println("통신하고있는 모듈 수 : "+String(num_of_received_sensor));
+      //delay(30);
       displayAct(2);
     }
   }  
 }
-
-void OnTxDone( void )
-{
-  Serial.print("송신완료..");
-  state=STATE_RX;
-}
-
-void OnTxTimeout( void )
-{
-    Radio.Sleep( );
-    Serial.print("통신 시간 초과...");
-    state=STATE_TX;
-}
-// 메세지 전달할 mac rssi 현재 lora의 layer 저장
-void changeLoraTo() {
-  //if(macFrom.length() !=12) return;
-  loraT.mac="";
-  loraT.mac+=loraF.mac;
-  loraT.rssi=loraF.rssi;
-  loraC.layer=loraF.layer+1;
-  saveConfig();  
-}
-
 
 void displayAct(int no) {
   displayOled.clear();
@@ -200,8 +150,8 @@ void displayAct(int no) {
     displayOled.drawString(0, 0, "Lora Start");
   }
   else if(no==2) {
-    displayOled.drawString(0, 20, "TestName :"+TestName);
-    displayOled.drawString(0, 40, "checkCount :"+String(checkCount));
+    //displayOled.drawString(0, 20, "TestName :"+TestName);
+    //displayOled.drawString(0, 40, "index :"+index);
   }
   else if(no==3) {
     displayOled.drawString(0, 20, "rxpacket");
@@ -214,17 +164,14 @@ void displayAct(int no) {
     displayOled.drawString(0, 20, "Lora Reset");
   }
   else if(no==10) {  // 통신테스트 때 사용
-    displayOled.drawString(0, 0, loraC.mac+"  layer "+String(loraC.layer));
-    displayOled.drawString(0, 10, "counter  "+String(checkCount));
-    displayOled.drawString(0, 20, "to    "+loraT.mac);
-    displayOled.drawString(0, 30, "from  "+loraF.mac);
+    displayOled.drawString(0, 20, loraC.mac+"  layer "+String(loraC.layer));
+    //displayOled.drawString(0, 10, "index  "+index);
+    displayOled.drawString(0, 30, "to    "+loraT.mac);
+    displayOled.drawString(0, 40, "from  "+loraF.mac);
   }
   displayOled.display();
 }
-
 void tickMeasure() {
-  //++로 각 신호에 번호를 붙여서 통신이 된다면 그 값을 저장하여 얼마나 누락이 됐는지 확인한다.
-  checkCount++;
   
   //측정값 로라로 전송
   DynamicJsonDocument doc(1024);
@@ -232,12 +179,15 @@ void tickMeasure() {
   doc["dire"]   = -1;
   doc["macTo"] = loraT.mac;
   doc["macFrom"] = loraC.mac;
-  doc["name"] = TestName;
   doc["layer"] = loraC.layer;
   doc["rssi"] = loraF.rssi;
-  doc["count"] = checkCount;
+  doc["ID"] = board_ID;
+  doc["index"] = checkCount;
   msgTo="";
   serializeJson(doc, msgTo);
+  //++로 각 신호에 번호를 붙여서 통신이 된다면 그 값을 저장하여 얼마나 누락이 됐는지 확인한다.
+  checkCount++;
+  state=STATE_TX;
 }
 
 //LORA로 메세지 받으면 동작
@@ -250,15 +200,6 @@ void OnRxDone( uint8_t *payload, uint16_t size, int16_t rssi, int8_t snr ){
   rxpacket[size]='\0';
   Radio.Sleep( );
   state=STATE_RX; 
-  // 수신된 패킷이 마지막으로 수신된 패킷과 동일한지 확인합니다
-  if (memcmp(rxpacket, lastRxPacket, size) == 0) {
-    // If the packets are the same, don't proceed with processing
-    return;
-  }  
-
-  // 패킷이 다른 경우 새 패킷을 lastRxPacket에 저장하고 계속합니다
-  memcpy(lastRxPacket, rxpacket, size);  
-  Serial.println(rxpacket); //rxpacket = {"mac":"106580fa12f4","type":13,"state":1,"mac":"dc6481fa12f4","dire":1,"layer":0
   loraF.rssi=rssi;
   displayAct(3);
   
@@ -267,54 +208,88 @@ void OnRxDone( uint8_t *payload, uint16_t size, int16_t rssi, int8_t snr ){
   String packet = packet1 + "}";
   deserializeJson(doc,packet);
   root = doc.as<JsonObject>();
+  Serial.println(packet);
+  bool save_flag = 1; //저장할지말지 변수
+  int save_index = 0;
+  
+  int Cindex = root["index"];     
+  int layerIn = root["layer"];    
+  // node와 게이트웨이의 차이점 layer, dire두가지 인데 layer = 0이고 dire가 1
+  //1. node한테 들어오는 데이터 2.게이트웨이에서 들어오는 데이터
+  if (layerIn != 0 && Cindex == 0) return;
+  
   String macIn = root["mac"];
   String macFrom = root["macFrom"];
   String macTo = root["macTo"];
   int dire = root["dire"];
-  int layerIn = root["layer"];
   int func = root["func"];
-  
+  int ID = root["ID"];              //ID = arr[1];
+
+  save_flag = 1; //저장할지말지 변수
+  save_index = 0;
+  for (int i = 0; i < 200; i++) {
+    //수신된 ID 목록에 지금 수신한 ID가 있고 수신한 인덱스가 더 오래된것일 때 저장안함
+    if (received_ID[i] == ID && (IDdata[ID].index >= Cindex)) {
+      save_flag = 0;
+      if (abs(int(Cindex - IDdata[ID].index)) > 255) {   //2바이트 숫자 넘어가면 저장함
+        save_flag = 1;
+      }
+    }
+  }
+  //내 보드아이디와 같다면 저장안함, 내 데이터가 다시 나한테 온 경우,
+  if (board_ID == ID) {
+    save_flag = 0;
+  }
+  if (save_flag == 1) {   //데이터 저장
+    IDdata[ID].ID = ID;
+    IDdata[ID].index = Cindex;
+  Serial.print("save_ID : " + String(ID));
+  Serial.println("||save_index : " + String(Cindex));
+    tickmeasureS = 1;
+    for (int i = 0; i < 200; i++) {   
+      if (received_ID[i] == 0) break; 
+      if (received_ID[i] == ID) break; 
+      save_index++; 
+    }
+    received_ID[save_index] = ID; 
+  }
   loraF.mac = "";
   loraF.mac += macFrom;
   loraF.dire = dire;
   loraF.layer = layerIn;
-
-//  Serial.println("loraF.mac:"+loraF.mac);
-//  //dire = -1 은 상위 노드로 올라감, dire = 1 하위 노드로 내려감
-//  loraF.dire = dire;
-//  Serial.println("loraF.dire:"+String(loraF.dire));
-//  //loraF.layer(데이터 출처의 레이어층 = 들어온 값의 layer)
-//  loraF.layer = layerIn;
-//  Serial.println("loraF.layer:"+String(loraF.layer));
-  //loraT.mac이 비어있으면 전송된 데이터를 loraT.mac으로 입력
-  if( (loraT.mac.length()<6) && (loraF.rssi > -90)) {
-   changeLoraTo();
+  Serial.print("func:"+String(func));
+  Serial.println(" layer:"+String(layerIn));
+  if( func == 1 && layerIn == 0) {
+  changeLoraTo(loraF.mac, loraF.rssi, layerIn+1);
   }
-//신호가 상위 layer한테 전달
+  if( (loraT.mac.length()<6) && (loraF.rssi > -130)) {
+   changeLoraTo(loraF.mac, loraF.rssi, layerIn+1);
+  }
+//데이터 위로 올라감.
   if(dire==-1) {
-    //본체mac값이 상대가 보낸 macTo랑 같고 내layer가 0 이 아니라면
-    if(loraC.mac==macTo && loraC.layer!=0){
+    //본체mac값이 상대가 보낸 macTo랑 같고 내layer가 0 이 아니라면 layerIn(들어온layer 2) > loraC.layer(내layer 3)
+    if(macTo==loraC.mac && loraC.layer!=0 && tickmeasureS == 1 && layerIn > loraC.layer){
       packet.replace("\"layer\":"+String(layerIn),"\"layer\":"+String(loraC.layer));
       packet.replace("\"macFrom\":\""+macFrom,"\"macFrom\":\""+loraC.mac);
       packet.replace("\"macTo\":\""+macTo,"\"macTo\":\""+loraT.mac);
-//      packet.replace("\"mac\":\""+macC,"\"mac\":\""+loraC.mac);
       msgTo="";
       msgTo+=packet;
       msgType=1;
       Serial.println("Bridge(-전달) "+msgTo);
       state=STATE_TX;
     }
+    tickmeasureS = 0;
   }
 //신호가 하위 layer한테 전달
   if(dire==1) {
     //입력된 macTo 가 없을 때 macFrom 을 macTo로 입력
     // 더 좋은 수신호가 있을 때 macTo로 입력
     if((loraF.rssi-loraT.rssi) > 10 && (layerIn-loraC.layer) <= -1) {
-      changeLoraTo();
+      changeLoraTo(loraF.mac, loraF.rssi, layerIn+1);
     }
     // 메세지 전달 자기와 링크된 로라의 msg만 전달한다.
     if(loraF.mac==loraT.mac && macIn!=loraC.mac){
-      packet.replace("\"layer\":"+String(layerIn),"\"layer\":"+String(loraC.layer));
+      packet.replace("\"layer\":"+String(layerIn),"\"layer\":"+String(loraC.layer+1));
       packet.replace("\"macFrom\":\""+loraF.mac,"\"macFrom\":\""+loraC.mac);
       msgTo="";
       msgTo+=packet;
@@ -323,9 +298,8 @@ void OnRxDone( uint8_t *payload, uint16_t size, int16_t rssi, int8_t snr ){
       state=STATE_TX;
     }
     //명령수행
-    //if(macObj==loraC.mac|| macObj=="ffffffffffff"){
-    if(macIn==loraC.mac){
-      Serial.println("msgFrom: "+packet);
+    if(macTo==loraC.mac || macIn=="ffffffff"){
+      Serial.println("reset msg: "+packet);
       displayAct(4);
       if(func==255)
         factoryDefault();
